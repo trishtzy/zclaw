@@ -7,6 +7,7 @@ idf_component_register(
         "llm_auth.c"
         "tools.c"
         "tools_common.c"
+        "gpio_policy.c"
         "tools_gpio.c"
         "tools_i2c.c"
         "tools_memory.c"

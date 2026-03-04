@@ -61,6 +61,7 @@ run_host_tests() {
         test_telegram_poll_policy.c \
         test_agent.c \
         test_tools_gpio_policy.c \
+        test_tools_i2c_policy.c \
         test_builtin_tools_registry.c \
         test_tools_system_diag.c \
         test_llm_auth.c \
@@ -74,6 +75,7 @@ run_host_tests() {
         mock_tools.c \
         mock_system_diag_deps.c \
         mock_ratelimit.c \
+        mock_i2c.c \
         ../../main/json_util.c \
         ../../main/cron_utils.c \
         ../../main/security.c \
@@ -87,7 +89,9 @@ run_host_tests() {
         ../../main/telegram_chat_ids.c \
         ../../main/telegram_poll_policy.c \
         ../../main/agent.c \
+        ../../main/gpio_policy.c \
         ../../main/tools_gpio.c \
+        ../../main/tools_i2c.c \
         ../../main/tools_system.c \
         $CJSON_LDFLAGS 2>&1 || {
         echo "Note: Failed to compile tests. Install cJSON:"

@@ -6,6 +6,7 @@ typedef int gpio_num_t;
 #define GPIO_MODE_OUTPUT 1
 #define GPIO_MODE_INPUT 2
 #define GPIO_MODE_INPUT_OUTPUT (GPIO_MODE_OUTPUT | GPIO_MODE_INPUT)
+#define GPIO_IS_VALID_GPIO(pin) ((pin) >= 0 && (pin) < GPIO_TEST_PIN_LIMIT)
 
 enum {
     GPIO_TEST_PIN_LIMIT = 128,

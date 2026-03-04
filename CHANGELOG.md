@@ -8,6 +8,14 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 - No unreleased changes yet.
 
+## [2.10.2] - 2026-03-04
+
+### Fixed
+- OpenAI-compatible API harness calls now auto-insert `SYSTEM_PROMPT` as a leading `system` message when none is present, aligning OpenRouter/OpenAI behavior with Anthropic's explicit system-prompt wiring.
+
+### Tests
+- Added host payload-composition coverage for `call_api` to verify system-message insertion when missing and no duplication when a custom leading system message already exists.
+
 ## [2.10.1] - 2026-03-03
 
 ### Fixed

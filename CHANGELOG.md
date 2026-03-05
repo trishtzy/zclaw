@@ -8,6 +8,18 @@ The format is based on Keep a Changelog and this project follows Semantic Versio
 
 - No unreleased changes yet.
 
+## [2.10.3] - 2026-03-05
+
+### Fixed
+- Unified GPIO pin safety policy across GPIO and I2C scan tools so both paths enforce the same allowed-pin checks.
+- `i2c_scan` now blocks classic ESP32 flash/PSRAM pins (`GPIO6-11`) via the shared policy layer.
+
+### Changed
+- Extracted reusable pin-policy logic into `main/gpio_policy.c`/`main/gpio_policy.h`.
+
+### Tests
+- Added host I2C policy coverage and mock I2C driver wiring (`test_tools_i2c_policy.c`, `mock_i2c.c`) and included the suite in `./scripts/test.sh host`.
+
 ## [2.10.2] - 2026-03-04
 
 ### Fixed

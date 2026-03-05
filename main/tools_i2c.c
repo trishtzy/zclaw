@@ -1,5 +1,6 @@
 #include "tools_handlers.h"
 #include "config.h"
+#include "gpio_policy.h"
 #include "driver/i2c.h"
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
@@ -17,54 +18,12 @@
 #define I2C_SCAN_MAX_FREQ_HZ         1000000
 #define I2C_SCAN_ADDR_TIMEOUT_MS     25
 
-static bool gpio_pin_in_allowlist(int pin, const char *csv)
-{
-    const char *cursor;
-
-    if (!csv || csv[0] == '\0') {
-        return false;
-    }
-
-    cursor = csv;
-    while (*cursor != '\0') {
-        char *endptr = NULL;
-        long value;
-
-        while (*cursor == ' ' || *cursor == '\t' || *cursor == ',') {
-            cursor++;
-        }
-        if (*cursor == '\0') {
-            break;
-        }
-
-        value = strtol(cursor, &endptr, 10);
-        if (endptr == cursor) {
-            while (*cursor != '\0' && *cursor != ',') {
-                cursor++;
-            }
-            continue;
-        }
-
-        if ((int)value == pin) {
-            return true;
-        }
-        cursor = endptr;
-    }
-
-    return false;
-}
-
-static bool gpio_pin_is_allowed(int pin)
-{
-    if (GPIO_ALLOWED_PINS_CSV[0] != '\0') {
-        return gpio_pin_in_allowlist(pin, GPIO_ALLOWED_PINS_CSV);
-    }
-    return pin >= GPIO_MIN_PIN && pin <= GPIO_MAX_PIN;
-}
-
 static bool validate_scan_pin(const char *field_name, int pin, char *result, size_t result_len)
 {
-    if (!gpio_pin_is_allowed(pin)) {
+    if (!gpio_policy_pin_is_allowed(pin)) {
+        if (gpio_policy_pin_forbidden_hint(pin, result, result_len)) {
+            return false;
+        }
         if (GPIO_ALLOWED_PINS_CSV[0] != '\0') {
             snprintf(result, result_len, "Error: %s pin %d is not in allowed list", field_name, pin);
         } else {
@@ -229,3 +188,10 @@ bool tools_i2c_scan_handler(const cJSON *input, char *result, size_t result_len)
 
     return true;
 }
+
+#ifdef TEST_BUILD
+bool tools_i2c_test_pin_is_allowed_for_esp32_target(int pin, const char *csv, int min_pin, int max_pin)
+{
+    return gpio_policy_test_pin_is_allowed(pin, csv, min_pin, max_pin, true, true);
+}
+#endif

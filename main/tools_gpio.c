@@ -1,5 +1,6 @@
 #include "tools_handlers.h"
 #include "config.h"
+#include "gpio_policy.h"
 #include "driver/gpio.h"
 #include "esp_log.h"
 #include "freertos/FreeRTOS.h"
@@ -13,92 +14,6 @@
 #define DELAY_MAX_MS 60000
 
 static const char *TAG = "tools";
-
-#ifndef GPIO_IS_VALID_GPIO
-#define GPIO_IS_VALID_GPIO(pin) ((pin) >= 0)
-#endif
-
-static bool gpio_pin_in_allowlist(int pin, const char *csv)
-{
-    const char *cursor;
-
-    if (!csv || csv[0] == '\0') {
-        return false;
-    }
-
-    cursor = csv;
-    while (*cursor != '\0') {
-        char *endptr = NULL;
-        long value;
-
-        while (*cursor == ' ' || *cursor == '\t' || *cursor == ',') {
-            cursor++;
-        }
-        if (*cursor == '\0') {
-            break;
-        }
-
-        value = strtol(cursor, &endptr, 10);
-        if (endptr == cursor) {
-            while (*cursor != '\0' && *cursor != ',') {
-                cursor++;
-            }
-            continue;
-        }
-
-        if ((int)value == pin) {
-            return true;
-        }
-        cursor = endptr;
-    }
-
-    return false;
-}
-
-static bool gpio_pin_is_allowed(int pin)
-{
-    bool in_policy;
-
-    if (pin < 0) {
-        return false;
-    }
-
-#if defined(CONFIG_IDF_TARGET_ESP32)
-    // ESP32-WROOM flash is wired to GPIO6..GPIO11; touching these pins can crash/hang.
-    if (pin >= 6 && pin <= 11) {
-        return false;
-    }
-#endif
-
-    if (GPIO_ALLOWED_PINS_CSV[0] != '\0') {
-        in_policy = gpio_pin_in_allowlist(pin, GPIO_ALLOWED_PINS_CSV);
-    } else {
-        in_policy = pin >= GPIO_MIN_PIN && pin <= GPIO_MAX_PIN;
-    }
-
-    if (!in_policy) {
-        return false;
-    }
-
-    return GPIO_IS_VALID_GPIO((gpio_num_t)pin);
-}
-
-static bool gpio_pin_forbidden_hint(int pin, char *result, size_t result_len)
-{
-#if defined(CONFIG_IDF_TARGET_ESP32)
-    if (pin >= 6 && pin <= 11) {
-        snprintf(result, result_len,
-                 "Error: pin %d is reserved for ESP32 flash/PSRAM (GPIO6-11); choose a different pin",
-                 pin);
-        return true;
-    }
-#else
-    (void)pin;
-    (void)result;
-    (void)result_len;
-#endif
-    return false;
-}
 
 static bool gpio_append_read_state(char **cursor, size_t *remaining, int pin, bool first_pin)
 {
@@ -141,8 +56,8 @@ bool tools_gpio_write_handler(const cJSON *input, char *result, size_t result_le
     int pin = pin_json->valueint;
     int state = state_json->valueint;
 
-    if (!gpio_pin_is_allowed(pin)) {
-        if (gpio_pin_forbidden_hint(pin, result, result_len)) {
+    if (!gpio_policy_pin_is_allowed(pin)) {
+        if (gpio_policy_pin_forbidden_hint(pin, result, result_len)) {
             return false;
         }
         if (GPIO_ALLOWED_PINS_CSV[0] != '\0') {
@@ -174,8 +89,8 @@ bool tools_gpio_read_handler(const cJSON *input, char *result, size_t result_len
 
     int pin = pin_json->valueint;
 
-    if (!gpio_pin_is_allowed(pin)) {
-        if (gpio_pin_forbidden_hint(pin, result, result_len)) {
+    if (!gpio_policy_pin_is_allowed(pin)) {
+        if (gpio_policy_pin_forbidden_hint(pin, result, result_len)) {
             return false;
         }
         if (GPIO_ALLOWED_PINS_CSV[0] != '\0') {
@@ -242,7 +157,7 @@ bool tools_gpio_read_all_handler(const cJSON *input, char *result, size_t result
                 csv_cursor = endptr;
                 continue;
             }
-            if (!gpio_pin_is_allowed((int)value)) {
+            if (!gpio_policy_pin_is_allowed((int)value)) {
                 csv_cursor = endptr;
                 continue;
             }
@@ -257,7 +172,7 @@ bool tools_gpio_read_all_handler(const cJSON *input, char *result, size_t result
     } else {
         int pin;
         for (pin = GPIO_MIN_PIN; pin <= GPIO_MAX_PIN; pin++) {
-            if (!gpio_pin_is_allowed(pin)) {
+            if (!gpio_policy_pin_is_allowed(pin)) {
                 continue;
             }
             if (!gpio_append_read_state(&cursor, &remaining, pin, count == 0)) {
@@ -307,23 +222,11 @@ bool tools_delay_handler(const cJSON *input, char *result, size_t result_len)
 #ifdef TEST_BUILD
 bool tools_gpio_test_pin_is_allowed(int pin, const char *csv, int min_pin, int max_pin)
 {
-    if (csv && csv[0] != '\0') {
-        return gpio_pin_in_allowlist(pin, csv);
-    }
-    return pin >= min_pin && pin <= max_pin;
+    return gpio_policy_test_pin_is_allowed(pin, csv, min_pin, max_pin, false, true);
 }
 
 bool tools_gpio_test_pin_is_allowed_for_esp32_target(int pin, const char *csv, int min_pin, int max_pin)
 {
-    if (pin < 0) {
-        return false;
-    }
-    if (pin >= 6 && pin <= 11) {
-        return false;
-    }
-    if (csv && csv[0] != '\0') {
-        return gpio_pin_in_allowlist(pin, csv);
-    }
-    return pin >= min_pin && pin <= max_pin;
+    return gpio_policy_test_pin_is_allowed(pin, csv, min_pin, max_pin, true, true);
 }
 #endif

@@ -950,7 +950,13 @@ if ! validate_backend "$BACKEND"; then
 fi
 
 if [ -z "$MODEL" ]; then
-    MODEL="$(default_model_for_backend "$BACKEND")"
+    DEFAULT_MODEL="$(default_model_for_backend "$BACKEND")"
+    if [ "$ASSUME_YES" = true ]; then
+        MODEL="$DEFAULT_MODEL"
+    else
+        read -r -p "Model ID (default: $DEFAULT_MODEL): " MODEL
+        MODEL="${MODEL:-$DEFAULT_MODEL}"
+    fi
 fi
 
 if [ "$BACKEND" = "ollama" ]; then

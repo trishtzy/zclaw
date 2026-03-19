@@ -1,6 +1,5 @@
 #include "tools_handlers.h"
-#include "config.h"
-#include "gpio_policy.h"
+#include "tools_common.h"
 #include "driver/gpio.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -12,33 +11,29 @@
 
 #define DHT_DATA_BYTES           5
 #define DHT_MAX_RETRIES          3
-#define DHT_TRACKED_PINS         128
+#define DHT_TRACKED_PINS         50
 #define DHT_RESPONSE_TIMEOUT_US  120
 #define DHT_BIT_TIMEOUT_US       120
 #define DHT_SAMPLE_DELAY_US      40
 
 typedef enum {
-    DHT_MODEL_INVALID = 0,
     DHT_MODEL_DHT11,
     DHT_MODEL_DHT22,
 } dht_model_t;
 
 typedef struct {
-    dht_model_t model;
     const char *name;
     int start_low_ms;
     int min_interval_ms;
 } dht_profile_t;
 
 static const dht_profile_t DHT11_PROFILE = {
-    .model = DHT_MODEL_DHT11,
     .name = "DHT11",
     .start_low_ms = 20,
     .min_interval_ms = 1000,
 };
 
 static const dht_profile_t DHT22_PROFILE = {
-    .model = DHT_MODEL_DHT22,
     .name = "DHT22",
     .start_low_ms = 2,
     .min_interval_ms = 2000,
@@ -143,22 +138,16 @@ static bool dht_capture_bytes_from_sensor(int pin,
     dht_delay_us(40);
     gpio_set_direction(pin, GPIO_MODE_INPUT);
 
-    if (!dht_wait_for_level(pin, 0, DHT_RESPONSE_TIMEOUT_US)) {
-        snprintf(result, result_len, "Error: DHT sensor on pin %d did not pull low", pin);
-        return false;
-    }
-    if (!dht_wait_for_level(pin, 1, DHT_RESPONSE_TIMEOUT_US)) {
-        snprintf(result, result_len, "Error: DHT sensor on pin %d did not raise response pulse", pin);
-        return false;
-    }
-    if (!dht_wait_for_level(pin, 0, DHT_RESPONSE_TIMEOUT_US)) {
-        snprintf(result, result_len, "Error: DHT sensor on pin %d did not start data transmission", pin);
+    if (!dht_wait_for_level(pin, 0, DHT_RESPONSE_TIMEOUT_US) ||
+        !dht_wait_for_level(pin, 1, DHT_RESPONSE_TIMEOUT_US) ||
+        !dht_wait_for_level(pin, 0, DHT_RESPONSE_TIMEOUT_US)) {
+        snprintf(result, result_len, "Error: no DHT response on pin %d", pin);
         return false;
     }
 
     for (int bit = 0; bit < 40; bit++) {
         if (!dht_wait_for_level(pin, 1, DHT_BIT_TIMEOUT_US)) {
-            snprintf(result, result_len, "Error: DHT sensor on pin %d timed out before bit %d", pin, bit);
+            snprintf(result, result_len, "Error: DHT timeout on pin %d", pin);
             return false;
         }
 
@@ -169,7 +158,7 @@ static bool dht_capture_bytes_from_sensor(int pin,
         }
 
         if (bit < 39 && !dht_wait_for_level(pin, 0, DHT_BIT_TIMEOUT_US)) {
-            snprintf(result, result_len, "Error: DHT sensor on pin %d timed out completing bit %d", pin, bit);
+            snprintf(result, result_len, "Error: DHT timeout on pin %d", pin);
             return false;
         }
     }
@@ -209,8 +198,6 @@ static bool dht_validate_and_format_result(const dht_profile_t *profile,
     uint8_t checksum = (uint8_t)(data[0] + data[1] + data[2] + data[3]);
     int humidity_tenths;
     int temperature_tenths;
-    char humidity_text[16];
-    char temperature_text[16];
     int humidity_abs;
     int temperature_abs;
 
@@ -227,7 +214,7 @@ static bool dht_validate_and_format_result(const dht_profile_t *profile,
         return false;
     }
 
-    if (profile->model == DHT_MODEL_DHT11) {
+    if (profile == &DHT11_PROFILE) {
         humidity_tenths = ((int)data[0] * 10) + (int)data[1];
         temperature_tenths = ((int)data[2] * 10) + (int)data[3];
     } else {
@@ -241,25 +228,16 @@ static bool dht_validate_and_format_result(const dht_profile_t *profile,
     humidity_abs = humidity_tenths < 0 ? -humidity_tenths : humidity_tenths;
     temperature_abs = temperature_tenths < 0 ? -temperature_tenths : temperature_tenths;
 
-    snprintf(humidity_text,
-             sizeof(humidity_text),
-             "%s%d.%d",
-             humidity_tenths < 0 ? "-" : "",
+    snprintf(result,
+             result_len,
+             "%s GPIO %d: %d.%d%% RH, %s%d.%d C",
+             profile->name,
+             pin,
              humidity_abs / 10,
-             humidity_abs % 10);
-    snprintf(temperature_text,
-             sizeof(temperature_text),
-             "%s%d.%d",
+             humidity_abs % 10,
              temperature_tenths < 0 ? "-" : "",
              temperature_abs / 10,
              temperature_abs % 10);
-    snprintf(result,
-             result_len,
-             "%s on GPIO %d: humidity=%s%%, temperature=%s C",
-             profile->name,
-             pin,
-             humidity_text,
-             temperature_text);
     return true;
 }
 
@@ -274,11 +252,11 @@ bool tools_dht_read_handler(const cJSON *input, char *result, size_t result_len)
     int retries = 1;
 
     if (!pin_json || !cJSON_IsNumber(pin_json)) {
-        snprintf(result, result_len, "Error: 'pin' required (number)");
+        snprintf(result, result_len, "Error: pin required");
         return false;
     }
     if (!model_json || !cJSON_IsString(model_json) || !model_json->valuestring) {
-        snprintf(result, result_len, "Error: 'model' required ('dht11' or 'dht22')");
+        snprintf(result, result_len, "Error: model required");
         return false;
     }
 
@@ -289,7 +267,7 @@ bool tools_dht_read_handler(const cJSON *input, char *result, size_t result_len)
     }
     if (retries_json) {
         if (!cJSON_IsNumber(retries_json)) {
-            snprintf(result, result_len, "Error: 'retries' must be a number");
+            snprintf(result, result_len, "Error: retries must be a number");
             return false;
         }
         retries = retries_json->valueint;
@@ -300,15 +278,7 @@ bool tools_dht_read_handler(const cJSON *input, char *result, size_t result_len)
     }
 
     pin = pin_json->valueint;
-    if (!gpio_policy_pin_is_allowed(pin)) {
-        if (gpio_policy_pin_forbidden_hint(pin, result, result_len)) {
-            return false;
-        }
-        if (GPIO_ALLOWED_PINS_CSV[0] != '\0') {
-            snprintf(result, result_len, "Error: pin %d is not in allowed list", pin);
-        } else {
-            snprintf(result, result_len, "Error: pin must be %d-%d", GPIO_MIN_PIN, GPIO_MAX_PIN);
-        }
+    if (!tools_validate_allowed_gpio_pin(pin, NULL, result, result_len)) {
         return false;
     }
 

@@ -96,6 +96,7 @@ run_host_tests() {
         ../../main/agent.c \
         ../../main/local_admin.c \
         ../../main/gpio_policy.c \
+        ../../main/tools_common.c \
         ../../main/tools_gpio.c \
         ../../main/tools_i2c.c \
         ../../main/tools_dht.c \

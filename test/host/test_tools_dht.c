@@ -30,9 +30,9 @@ TEST(decode_dht11_payload_formats_temperature_and_humidity)
     char result[128] = {0};
 
     ASSERT(tools_dht_test_decode_bytes("dht11", 5, data, result, sizeof(result)));
-    ASSERT_STR_CONTAINS(result, "DHT11 on GPIO 5");
-    ASSERT_STR_CONTAINS(result, "humidity=55.0%");
-    ASSERT_STR_CONTAINS(result, "temperature=24.0 C");
+    ASSERT_STR_CONTAINS(result, "DHT11 GPIO 5");
+    ASSERT_STR_CONTAINS(result, "55.0% RH");
+    ASSERT_STR_CONTAINS(result, "24.0 C");
     return 0;
 }
 
@@ -42,9 +42,9 @@ TEST(decode_dht22_payload_formats_fractional_values)
     char result[128] = {0};
 
     ASSERT(tools_dht_test_decode_bytes("dht22", 4, data, result, sizeof(result)));
-    ASSERT_STR_CONTAINS(result, "DHT22 on GPIO 4");
-    ASSERT_STR_CONTAINS(result, "humidity=55.5%");
-    ASSERT_STR_CONTAINS(result, "temperature=23.5 C");
+    ASSERT_STR_CONTAINS(result, "DHT22 GPIO 4");
+    ASSERT_STR_CONTAINS(result, "55.5% RH");
+    ASSERT_STR_CONTAINS(result, "23.5 C");
     return 0;
 }
 
@@ -69,7 +69,7 @@ TEST(handler_uses_mocked_read_and_enforces_retry_validation)
     tools_dht_test_set_mock_success(data);
 
     ASSERT(tools_dht_read_handler(input, result, sizeof(result)));
-    ASSERT_STR_CONTAINS(result, "DHT11 on GPIO 5");
+    ASSERT_STR_CONTAINS(result, "DHT11 GPIO 5");
 
     cJSON_Delete(input);
     return 0;

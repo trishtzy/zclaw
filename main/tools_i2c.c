@@ -1,5 +1,5 @@
 #include "tools_handlers.h"
-#include "config.h"
+#include "tools_common.h"
 #include "gpio_policy.h"
 #include "driver/i2c.h"
 #include "esp_err.h"
@@ -21,21 +21,11 @@
 #define I2C_IO_TIMEOUT_MS            1000
 #define I2C_MAX_DATA_BYTES           64
 
-static bool validate_i2c_pin(const char *field_name, int pin, char *result, size_t result_len)
-{
-    if (!gpio_policy_pin_is_allowed(pin)) {
-        if (gpio_policy_pin_forbidden_hint(pin, result, result_len)) {
-            return false;
-        }
-        if (GPIO_ALLOWED_PINS_CSV[0] != '\0') {
-            snprintf(result, result_len, "Error: %s pin %d is not in allowed list", field_name, pin);
-        } else {
-            snprintf(result, result_len, "Error: %s pin must be %d-%d", field_name, GPIO_MIN_PIN, GPIO_MAX_PIN);
-        }
-        return false;
-    }
-    return true;
-}
+typedef enum {
+    I2C_TOOL_WRITE = 0,
+    I2C_TOOL_READ,
+    I2C_TOOL_WRITE_READ,
+} i2c_tool_mode_t;
 
 static bool parse_frequency(const cJSON *input, int *frequency_hz, char *result, size_t result_len)
 {
@@ -46,7 +36,7 @@ static bool parse_frequency(const cJSON *input, int *frequency_hz, char *result,
         return true;
     }
     if (!cJSON_IsNumber(freq_json)) {
-        snprintf(result, result_len, "Error: 'frequency_hz' must be a number");
+        snprintf(result, result_len, "Error: frequency_hz must be a number");
         return false;
     }
     *frequency_hz = freq_json->valueint;
@@ -62,7 +52,7 @@ static bool parse_address(const cJSON *input, uint8_t *address, char *result, si
     cJSON *address_json = cJSON_GetObjectItem(input, "address");
 
     if (!address_json || !cJSON_IsNumber(address_json)) {
-        snprintf(result, result_len, "Error: 'address' required (number)");
+        snprintf(result, result_len, "Error: address required");
         return false;
     }
     if (address_json->valueint < I2C_ADDR_FIRST || address_json->valueint > I2C_ADDR_LAST) {
@@ -78,7 +68,7 @@ static bool parse_read_length(const cJSON *input, size_t *read_length, char *res
     cJSON *read_length_json = cJSON_GetObjectItem(input, "read_length");
 
     if (!read_length_json || !cJSON_IsNumber(read_length_json)) {
-        snprintf(result, result_len, "Error: 'read_length' required (number)");
+        snprintf(result, result_len, "Error: read_length required");
         return false;
     }
     if (read_length_json->valueint <= 0 || read_length_json->valueint > I2C_MAX_DATA_BYTES) {
@@ -102,15 +92,13 @@ static bool parse_hex_payload_field(const cJSON *input,
     size_t count = 0;
 
     if (!field_json || !cJSON_IsString(field_json) || !field_json->valuestring) {
-        snprintf(result, result_len, "Error: '%s' required (string)", field_name);
+        snprintf(result, result_len, "Error: %s required", field_name);
         return false;
     }
 
     cursor = field_json->valuestring;
     while (*cursor != '\0') {
-        char token[8];
         char *endptr = NULL;
-        size_t token_len = 0;
         long value;
 
         while (*cursor != '\0' &&
@@ -121,39 +109,29 @@ static bool parse_hex_payload_field(const cJSON *input,
             break;
         }
 
-        while (*cursor != '\0' &&
-               !(isspace((unsigned char)*cursor) || *cursor == ',' || *cursor == ';' || *cursor == ':')) {
-            if (token_len + 1 >= sizeof(token)) {
-                snprintf(result, result_len, "Error: '%s' token too long", field_name);
-                return false;
-            }
-            token[token_len++] = *cursor++;
-        }
-        token[token_len] = '\0';
-
-        if (token_len > 2 && token[0] == '0' && (token[1] == 'x' || token[1] == 'X')) {
-            memmove(token, token + 2, token_len - 1);
-        }
-
-        if (token[0] == '\0') {
-            continue;
-        }
-
-        value = strtol(token, &endptr, 16);
-        if (endptr == token || *endptr != '\0' || value < 0 || value > 255) {
-            snprintf(result, result_len, "Error: '%s' must be space-separated hex bytes", field_name);
+        value = strtol(cursor, &endptr, 16);
+        if (endptr == cursor ||
+            (*endptr != '\0' &&
+             !isspace((unsigned char)*endptr) &&
+             *endptr != ',' &&
+             *endptr != ';' &&
+             *endptr != ':') ||
+            value < 0 ||
+            value > 255) {
+            snprintf(result, result_len, "Error: %s must be hex bytes", field_name);
             return false;
         }
         if (count >= max_len) {
-            snprintf(result, result_len, "Error: '%s' exceeds %d bytes", field_name, I2C_MAX_DATA_BYTES);
+            snprintf(result, result_len, "Error: %s exceeds %d bytes", field_name, I2C_MAX_DATA_BYTES);
             return false;
         }
 
         buffer[count++] = (uint8_t)value;
+        cursor = endptr;
     }
 
     if (count == 0) {
-        snprintf(result, result_len, "Error: '%s' must contain at least one hex byte", field_name);
+        snprintf(result, result_len, "Error: %s must contain at least one byte", field_name);
         return false;
     }
 
@@ -180,6 +158,34 @@ static bool format_hex_bytes(const uint8_t *bytes, size_t byte_count, char *resu
         }
         offset += (size_t)written;
     }
+    return true;
+}
+
+static bool parse_bus_pins(const cJSON *input, int *sda_pin, int *scl_pin, char *result, size_t result_len)
+{
+    cJSON *sda_pin_json = cJSON_GetObjectItem(input, "sda_pin");
+    cJSON *scl_pin_json = cJSON_GetObjectItem(input, "scl_pin");
+
+    if (!sda_pin_json || !cJSON_IsNumber(sda_pin_json)) {
+        snprintf(result, result_len, "Error: sda_pin required");
+        return false;
+    }
+    if (!scl_pin_json || !cJSON_IsNumber(scl_pin_json)) {
+        snprintf(result, result_len, "Error: scl_pin required");
+        return false;
+    }
+
+    *sda_pin = sda_pin_json->valueint;
+    *scl_pin = scl_pin_json->valueint;
+    if (*sda_pin == *scl_pin) {
+        snprintf(result, result_len, "Error: SDA and SCL must differ");
+        return false;
+    }
+    if (!tools_validate_allowed_gpio_pin(*sda_pin, "SDA", result, result_len) ||
+        !tools_validate_allowed_gpio_pin(*scl_pin, "SCL", result, result_len)) {
+        return false;
+    }
+
     return true;
 }
 
@@ -213,35 +219,127 @@ static bool init_i2c_master(int sda_pin, int scl_pin, int frequency_hz, char *re
     return true;
 }
 
+static const char *i2c_mode_name(i2c_tool_mode_t mode)
+{
+    switch (mode) {
+        case I2C_TOOL_WRITE:
+            return "i2c_write";
+        case I2C_TOOL_READ:
+            return "i2c_read";
+        default:
+            return "i2c_write_read";
+    }
+}
+
+static bool execute_i2c_transfer(const cJSON *input,
+                                 i2c_tool_mode_t mode,
+                                 char *result,
+                                 size_t result_len)
+{
+    uint8_t address = 0;
+    uint8_t write_buffer[I2C_MAX_DATA_BYTES];
+    uint8_t read_buffer[I2C_MAX_DATA_BYTES];
+    char hex_buffer[(5 * I2C_MAX_DATA_BYTES) + 1];
+    size_t write_len = 0;
+    size_t read_len = 0;
+    int sda_pin;
+    int scl_pin;
+    int frequency_hz = I2C_DEFAULT_FREQ_HZ;
+    esp_err_t err;
+
+    if (!parse_bus_pins(input, &sda_pin, &scl_pin, result, result_len) ||
+        !parse_address(input, &address, result, result_len) ||
+        !parse_frequency(input, &frequency_hz, result, result_len)) {
+        return false;
+    }
+    if (mode != I2C_TOOL_READ &&
+        !parse_hex_payload_field(input,
+                                 mode == I2C_TOOL_WRITE ? "data_hex" : "write_hex",
+                                 write_buffer,
+                                 sizeof(write_buffer),
+                                 &write_len,
+                                 result,
+                                 result_len)) {
+        return false;
+    }
+    if (mode != I2C_TOOL_WRITE &&
+        !parse_read_length(input, &read_len, result, result_len)) {
+        return false;
+    }
+    if (!init_i2c_master(sda_pin, scl_pin, frequency_hz, result, result_len)) {
+        return false;
+    }
+
+    memset(read_buffer, 0, sizeof(read_buffer));
+    switch (mode) {
+        case I2C_TOOL_WRITE:
+            err = i2c_master_write_to_device(
+                I2C_TOOL_PORT,
+                address,
+                write_buffer,
+                write_len,
+                pdMS_TO_TICKS(I2C_IO_TIMEOUT_MS)
+            );
+            break;
+        case I2C_TOOL_READ:
+            err = i2c_master_read_from_device(
+                I2C_TOOL_PORT,
+                address,
+                read_buffer,
+                read_len,
+                pdMS_TO_TICKS(I2C_IO_TIMEOUT_MS)
+            );
+            break;
+        default:
+            err = i2c_master_write_read_device(
+                I2C_TOOL_PORT,
+                address,
+                write_buffer,
+                write_len,
+                read_buffer,
+                read_len,
+                pdMS_TO_TICKS(I2C_IO_TIMEOUT_MS)
+            );
+            break;
+    }
+
+    i2c_driver_delete(I2C_TOOL_PORT);
+    if (err != ESP_OK) {
+        snprintf(result, result_len, "Error: %s failed (%s)", i2c_mode_name(mode), esp_err_to_name(err));
+        return false;
+    }
+
+    if (mode == I2C_TOOL_WRITE) {
+        snprintf(result, result_len, "I2C 0x%02X wrote %d byte(s)", address, (int)write_len);
+        return true;
+    }
+    if (!format_hex_bytes(read_buffer, read_len, hex_buffer, sizeof(hex_buffer))) {
+        snprintf(result, result_len, "Error: failed to format I2C read");
+        return false;
+    }
+    if (mode == I2C_TOOL_READ) {
+        snprintf(result, result_len, "I2C 0x%02X read %d byte(s): %s", address, (int)read_len, hex_buffer);
+        return true;
+    }
+
+    snprintf(result,
+             result_len,
+             "I2C 0x%02X read %d byte(s) after writing %d byte(s): %s",
+             address,
+             (int)read_len,
+             (int)write_len,
+             hex_buffer);
+    return true;
+}
+
 bool tools_i2c_scan_handler(const cJSON *input, char *result, size_t result_len)
 {
-    cJSON *sda_pin_json = cJSON_GetObjectItem(input, "sda_pin");
-    cJSON *scl_pin_json = cJSON_GetObjectItem(input, "scl_pin");
+    int sda_pin;
+    int scl_pin;
     int frequency_hz = I2C_DEFAULT_FREQ_HZ;
 
-    if (!sda_pin_json || !cJSON_IsNumber(sda_pin_json)) {
-        snprintf(result, result_len, "Error: 'sda_pin' required (number)");
-        return false;
-    }
-    if (!scl_pin_json || !cJSON_IsNumber(scl_pin_json)) {
-        snprintf(result, result_len, "Error: 'scl_pin' required (number)");
-        return false;
-    }
-
-    int sda_pin = sda_pin_json->valueint;
-    int scl_pin = scl_pin_json->valueint;
-
-    if (sda_pin == scl_pin) {
-        snprintf(result, result_len, "Error: SDA and SCL must be different pins");
-        return false;
-    }
-    if (!validate_i2c_pin("SDA", sda_pin, result, result_len)) {
-        return false;
-    }
-    if (!validate_i2c_pin("SCL", scl_pin, result, result_len)) {
-        return false;
-    }
-    if (!parse_frequency(input, &frequency_hz, result, result_len)) {
+    if (!parse_bus_pins(input, &sda_pin, &scl_pin, result, result_len) ||
+        !parse_frequency(input, &frequency_hz, result, result_len)) {
         return false;
     }
 
@@ -283,7 +381,7 @@ bool tools_i2c_scan_handler(const cJSON *input, char *result, size_t result_len)
         snprintf(
             result,
             result_len,
-            "No I2C devices found on SDA=%d SCL=%d @ %d Hz",
+            "No I2C devices on SDA=%d SCL=%d @ %d Hz",
             sda_pin,
             scl_pin,
             frequency_hz
@@ -295,14 +393,13 @@ bool tools_i2c_scan_handler(const cJSON *input, char *result, size_t result_len)
     int written = snprintf(
         result,
         result_len,
-        "Found %d I2C device(s) on SDA=%d SCL=%d @ %d Hz: ",
-        found_count,
+        "I2C SDA=%d SCL=%d @ %d Hz: ",
         sda_pin,
         scl_pin,
         frequency_hz
     );
     if (written < 0) {
-        snprintf(result, result_len, "Found %d I2C device(s)", found_count);
+        snprintf(result, result_len, "I2C scan found %d device(s)", found_count);
         return true;
     }
     offset = (size_t)written < result_len ? (size_t)written : result_len - 1;
@@ -335,208 +432,17 @@ bool tools_i2c_scan_handler(const cJSON *input, char *result, size_t result_len)
 
 bool tools_i2c_write_handler(const cJSON *input, char *result, size_t result_len)
 {
-    cJSON *sda_pin_json = cJSON_GetObjectItem(input, "sda_pin");
-    cJSON *scl_pin_json = cJSON_GetObjectItem(input, "scl_pin");
-    uint8_t address = 0;
-    uint8_t write_buffer[I2C_MAX_DATA_BYTES];
-    size_t write_len = 0;
-    int sda_pin;
-    int scl_pin;
-    int frequency_hz = I2C_DEFAULT_FREQ_HZ;
-    esp_err_t err;
-
-    if (!sda_pin_json || !cJSON_IsNumber(sda_pin_json)) {
-        snprintf(result, result_len, "Error: 'sda_pin' required (number)");
-        return false;
-    }
-    if (!scl_pin_json || !cJSON_IsNumber(scl_pin_json)) {
-        snprintf(result, result_len, "Error: 'scl_pin' required (number)");
-        return false;
-    }
-
-    sda_pin = sda_pin_json->valueint;
-    scl_pin = scl_pin_json->valueint;
-    if (sda_pin == scl_pin) {
-        snprintf(result, result_len, "Error: SDA and SCL must be different pins");
-        return false;
-    }
-    if (!validate_i2c_pin("SDA", sda_pin, result, result_len) ||
-        !validate_i2c_pin("SCL", scl_pin, result, result_len) ||
-        !parse_address(input, &address, result, result_len) ||
-        !parse_hex_payload_field(input, "data_hex", write_buffer, sizeof(write_buffer), &write_len, result, result_len) ||
-        !parse_frequency(input, &frequency_hz, result, result_len)) {
-        return false;
-    }
-    if (!init_i2c_master(sda_pin, scl_pin, frequency_hz, result, result_len)) {
-        return false;
-    }
-
-    err = i2c_master_write_to_device(
-        I2C_TOOL_PORT,
-        address,
-        write_buffer,
-        write_len,
-        pdMS_TO_TICKS(I2C_IO_TIMEOUT_MS)
-    );
-    i2c_driver_delete(I2C_TOOL_PORT);
-    if (err != ESP_OK) {
-        snprintf(result, result_len, "Error: i2c_write failed (%s)", esp_err_to_name(err));
-        return false;
-    }
-
-    snprintf(result,
-             result_len,
-             "Wrote %d byte(s) to I2C address 0x%02X on SDA=%d SCL=%d @ %d Hz",
-             (int)write_len,
-             address,
-             sda_pin,
-             scl_pin,
-             frequency_hz);
-    return true;
+    return execute_i2c_transfer(input, I2C_TOOL_WRITE, result, result_len);
 }
 
 bool tools_i2c_read_handler(const cJSON *input, char *result, size_t result_len)
 {
-    cJSON *sda_pin_json = cJSON_GetObjectItem(input, "sda_pin");
-    cJSON *scl_pin_json = cJSON_GetObjectItem(input, "scl_pin");
-    uint8_t address = 0;
-    uint8_t read_buffer[I2C_MAX_DATA_BYTES];
-    char hex_buffer[(5 * I2C_MAX_DATA_BYTES) + 1];
-    size_t read_len = 0;
-    int sda_pin;
-    int scl_pin;
-    int frequency_hz = I2C_DEFAULT_FREQ_HZ;
-    esp_err_t err;
-
-    if (!sda_pin_json || !cJSON_IsNumber(sda_pin_json)) {
-        snprintf(result, result_len, "Error: 'sda_pin' required (number)");
-        return false;
-    }
-    if (!scl_pin_json || !cJSON_IsNumber(scl_pin_json)) {
-        snprintf(result, result_len, "Error: 'scl_pin' required (number)");
-        return false;
-    }
-
-    sda_pin = sda_pin_json->valueint;
-    scl_pin = scl_pin_json->valueint;
-    if (sda_pin == scl_pin) {
-        snprintf(result, result_len, "Error: SDA and SCL must be different pins");
-        return false;
-    }
-    if (!validate_i2c_pin("SDA", sda_pin, result, result_len) ||
-        !validate_i2c_pin("SCL", scl_pin, result, result_len) ||
-        !parse_address(input, &address, result, result_len) ||
-        !parse_read_length(input, &read_len, result, result_len) ||
-        !parse_frequency(input, &frequency_hz, result, result_len)) {
-        return false;
-    }
-    if (!init_i2c_master(sda_pin, scl_pin, frequency_hz, result, result_len)) {
-        return false;
-    }
-
-    memset(read_buffer, 0, sizeof(read_buffer));
-    err = i2c_master_read_from_device(
-        I2C_TOOL_PORT,
-        address,
-        read_buffer,
-        read_len,
-        pdMS_TO_TICKS(I2C_IO_TIMEOUT_MS)
-    );
-    i2c_driver_delete(I2C_TOOL_PORT);
-    if (err != ESP_OK) {
-        snprintf(result, result_len, "Error: i2c_read failed (%s)", esp_err_to_name(err));
-        return false;
-    }
-    if (!format_hex_bytes(read_buffer, read_len, hex_buffer, sizeof(hex_buffer))) {
-        snprintf(result, result_len, "Error: failed to format I2C read result");
-        return false;
-    }
-
-    snprintf(result,
-             result_len,
-             "Read %d byte(s) from I2C address 0x%02X on SDA=%d SCL=%d @ %d Hz: %s",
-             (int)read_len,
-             address,
-             sda_pin,
-             scl_pin,
-             frequency_hz,
-             hex_buffer);
-    return true;
+    return execute_i2c_transfer(input, I2C_TOOL_READ, result, result_len);
 }
 
 bool tools_i2c_write_read_handler(const cJSON *input, char *result, size_t result_len)
 {
-    cJSON *sda_pin_json = cJSON_GetObjectItem(input, "sda_pin");
-    cJSON *scl_pin_json = cJSON_GetObjectItem(input, "scl_pin");
-    uint8_t address = 0;
-    uint8_t write_buffer[I2C_MAX_DATA_BYTES];
-    uint8_t read_buffer[I2C_MAX_DATA_BYTES];
-    char hex_buffer[(5 * I2C_MAX_DATA_BYTES) + 1];
-    size_t write_len = 0;
-    size_t read_len = 0;
-    int sda_pin;
-    int scl_pin;
-    int frequency_hz = I2C_DEFAULT_FREQ_HZ;
-    esp_err_t err;
-
-    if (!sda_pin_json || !cJSON_IsNumber(sda_pin_json)) {
-        snprintf(result, result_len, "Error: 'sda_pin' required (number)");
-        return false;
-    }
-    if (!scl_pin_json || !cJSON_IsNumber(scl_pin_json)) {
-        snprintf(result, result_len, "Error: 'scl_pin' required (number)");
-        return false;
-    }
-
-    sda_pin = sda_pin_json->valueint;
-    scl_pin = scl_pin_json->valueint;
-    if (sda_pin == scl_pin) {
-        snprintf(result, result_len, "Error: SDA and SCL must be different pins");
-        return false;
-    }
-    if (!validate_i2c_pin("SDA", sda_pin, result, result_len) ||
-        !validate_i2c_pin("SCL", scl_pin, result, result_len) ||
-        !parse_address(input, &address, result, result_len) ||
-        !parse_hex_payload_field(input, "write_hex", write_buffer, sizeof(write_buffer), &write_len, result, result_len) ||
-        !parse_read_length(input, &read_len, result, result_len) ||
-        !parse_frequency(input, &frequency_hz, result, result_len)) {
-        return false;
-    }
-    if (!init_i2c_master(sda_pin, scl_pin, frequency_hz, result, result_len)) {
-        return false;
-    }
-
-    memset(read_buffer, 0, sizeof(read_buffer));
-    err = i2c_master_write_read_device(
-        I2C_TOOL_PORT,
-        address,
-        write_buffer,
-        write_len,
-        read_buffer,
-        read_len,
-        pdMS_TO_TICKS(I2C_IO_TIMEOUT_MS)
-    );
-    i2c_driver_delete(I2C_TOOL_PORT);
-    if (err != ESP_OK) {
-        snprintf(result, result_len, "Error: i2c_write_read failed (%s)", esp_err_to_name(err));
-        return false;
-    }
-    if (!format_hex_bytes(read_buffer, read_len, hex_buffer, sizeof(hex_buffer))) {
-        snprintf(result, result_len, "Error: failed to format I2C read result");
-        return false;
-    }
-
-    snprintf(result,
-             result_len,
-             "Read %d byte(s) from I2C address 0x%02X after writing %d byte(s) on SDA=%d SCL=%d @ %d Hz: %s",
-             (int)read_len,
-             address,
-             (int)write_len,
-             sda_pin,
-             scl_pin,
-             frequency_hz,
-             hex_buffer);
-    return true;
+    return execute_i2c_transfer(input, I2C_TOOL_WRITE_READ, result, result_len);
 }
 
 #ifdef TEST_BUILD

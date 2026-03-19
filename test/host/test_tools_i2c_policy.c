@@ -62,7 +62,7 @@ TEST(valid_scan_path_initializes_i2c_and_returns_no_devices)
     i2c_test_set_cmd_begin_result(ESP_FAIL);
 
     ASSERT(tools_i2c_scan_handler(input, result, sizeof(result)));
-    ASSERT_STR_CONTAINS(result, "No I2C devices found");
+    ASSERT_STR_CONTAINS(result, "No I2C devices on");
     ASSERT(i2c_test_get_param_config_calls() == 1);
     ASSERT(i2c_test_get_driver_install_calls() == 1);
     ASSERT(i2c_test_get_driver_delete_calls() >= 2);
@@ -81,7 +81,7 @@ TEST(write_parses_hex_payload_and_records_device_write)
     i2c_test_set_write_to_device_result(ESP_OK);
 
     ASSERT(tools_i2c_write_handler(input, result, sizeof(result)));
-    ASSERT_STR_CONTAINS(result, "Wrote 2 byte(s)");
+    ASSERT_STR_CONTAINS(result, "wrote 2 byte(s)");
     ASSERT(i2c_test_get_last_address() == 118);
     ASSERT(i2c_test_get_last_write_length() == 2);
     ASSERT(i2c_test_get_last_write_byte(0) == 0xF4);
@@ -103,7 +103,7 @@ TEST(read_returns_hex_payload_from_mock)
     i2c_test_set_read_from_device_result(ESP_OK);
 
     ASSERT(tools_i2c_read_handler(input, result, sizeof(result)));
-    ASSERT_STR_CONTAINS(result, "Read 3 byte(s)");
+    ASSERT_STR_CONTAINS(result, "read 3 byte(s)");
     ASSERT_STR_CONTAINS(result, "0xDE 0xAD 0xBE");
     ASSERT(i2c_test_get_last_address() == 64);
     ASSERT(i2c_test_get_last_read_length() == 3);
@@ -144,7 +144,7 @@ TEST(rejects_malformed_hex_payload_before_i2c_init)
     i2c_test_reset();
 
     ASSERT(!tools_i2c_write_handler(input, result, sizeof(result)));
-    ASSERT_STR_CONTAINS(result, "space-separated hex bytes");
+    ASSERT_STR_CONTAINS(result, "hex bytes");
     ASSERT(i2c_test_get_param_config_calls() == 0);
     ASSERT(i2c_test_get_driver_install_calls() == 0);
 

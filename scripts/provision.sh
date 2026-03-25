@@ -29,9 +29,9 @@ Options:
   --port <serial-port>      Serial port (auto-detect if omitted)
   --ssid <wifi-ssid>        WiFi SSID (auto-detected when possible)
   --pass <wifi-pass>        WiFi password (optional)
-  --backend <provider>      anthropic | openai | openrouter | ollama
+  --backend <provider>      anthropic | openai | openrouter | ollama | opencode
   --model <model-id>        Model ID (defaults by backend)
-  --api-key <key>           LLM API key (required for anthropic/openai/openrouter)
+  --api-key <key>           LLM API key (required for anthropic/openai/openrouter/opencode)
   --api-url <url>           Optional custom API endpoint URL
   --tg-token <token>        Telegram bot token (optional)
   --tg-chat-id <id[,id...]> Telegram chat ID allowlist (optional)
@@ -352,6 +352,7 @@ default_model_for_backend() {
         openai) echo "gpt-5.4" ;;
         openrouter) echo "openrouter/auto" ;;
         ollama) echo "qwen3:8b" ;;
+        opencode) echo "opencode/minimax-m2.5-free" ;;
         *) echo "claude-sonnet-4-6" ;;
     esac
 }
@@ -379,6 +380,10 @@ load_model_menu_for_backend() {
         ollama)
             MODEL_MENU_LABELS=("qwen3:8b (default)" "Other model ID")
             MODEL_MENU_VALUES=("qwen3:8b" "__custom__")
+            ;;
+        opencode)
+            MODEL_MENU_LABELS=("opencode/minimax-m2.5-free (default)" "Other model ID")
+            MODEL_MENU_VALUES=("opencode/minimax-m2.5-free" "__custom__")
             ;;
         *)
             MODEL_MENU_LABELS=("Other model ID")
@@ -429,7 +434,7 @@ prompt_for_model() {
 
 validate_backend() {
     case "$1" in
-        anthropic|openai|openrouter|ollama) return 0 ;;
+        anthropic|openai|openrouter|ollama|opencode) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -645,12 +650,13 @@ verify_openai_api_key() {
     local api_key="$1"
     local _model="$2"
     local api_url_override="$3"
+    local label="${4:-OpenAI}"
     local api_url="${api_url_override:-${OPENAI_API_URL:-https://api.openai.com/v1/models}}"
     local response_file
     local http_code
 
     if ! command -v curl >/dev/null 2>&1; then
-        echo "Warning: curl not found; skipping OpenAI API check."
+        echo "Warning: curl not found; skipping ${label} API check."
         return 2
     fi
 
@@ -662,17 +668,17 @@ verify_openai_api_key() {
         -H "authorization: Bearer $api_key" \
         "$api_url")"; then
         rm -f "$response_file"
-        echo "OpenAI API check failed: network/transport error."
+        echo "${label} API check failed: network/transport error."
         return 1
     fi
 
     if [ "$http_code" = "200" ]; then
         rm -f "$response_file"
-        echo "OpenAI API check passed (models endpoint reachable)."
+        echo "${label} API check passed (models endpoint reachable)."
         return 0
     fi
 
-    echo "OpenAI API check failed (HTTP $http_code)."
+    echo "${label} API check failed (HTTP $http_code)."
     if command -v python3 >/dev/null 2>&1; then
         python3 - "$response_file" <<'PY'
 import json
@@ -1010,13 +1016,13 @@ if [ -z "$BACKEND" ]; then
     if [ "$ASSUME_YES" = true ]; then
         BACKEND="openai"
     else
-        read -r -p "LLM provider [openai/anthropic/openrouter/ollama] (default: openai): " BACKEND
+        read -r -p "LLM provider [openai/anthropic/openrouter/ollama/opencode] (default: openai): " BACKEND
         BACKEND="${BACKEND:-openai}"
     fi
 fi
 
 if ! validate_backend "$BACKEND"; then
-    echo "Error: invalid backend '$BACKEND' (expected anthropic|openai|openrouter|ollama)"
+    echo "Error: invalid backend '$BACKEND' (expected anthropic|openai|openrouter|ollama|opencode)"
     exit 1
 fi
 
@@ -1042,6 +1048,10 @@ if [ "$BACKEND" = "ollama" ]; then
         echo "Error: invalid --api-url. Expected http(s) URL."
         exit 1
     fi
+fi
+
+if [ "$BACKEND" = "opencode" ] && [ -z "$API_URL" ]; then
+    API_URL="https://opencode.ai/zen/v1/chat/completions"
 fi
 
 if [ "$BACKEND" != "ollama" ] && [ -z "$API_KEY" ]; then
@@ -1077,6 +1087,10 @@ if [ "$VERIFY_API_KEY" = true ]; then
             VERIFY_LABEL="Ollama endpoint"
             VERIFY_FN="verify_ollama_endpoint"
             ;;
+        opencode)
+            VERIFY_LABEL="OpenCode"
+            VERIFY_FN="verify_openai_api_key"
+            ;;
     esac
 
     if [ -n "$VERIFY_FN" ]; then
@@ -1087,7 +1101,7 @@ if [ "$VERIFY_API_KEY" = true ]; then
             else
                 echo "Verifying ${VERIFY_LABEL} API key with a quick connectivity check..."
             fi
-            if "$VERIFY_FN" "$API_KEY" "$MODEL" "$API_URL"; then
+            if "$VERIFY_FN" "$API_KEY" "$MODEL" "$API_URL" "$VERIFY_LABEL"; then
                 break
             fi
 

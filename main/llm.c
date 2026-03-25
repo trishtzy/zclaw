@@ -48,6 +48,8 @@ static const char *llm_backend_name(llm_backend_t backend)
             return "OpenRouter";
         case LLM_BACKEND_OLLAMA:
             return "Ollama";
+        case LLM_BACKEND_OPENCODE:
+            return "OpenCode";
         default:
             return "Unknown";
     }
@@ -539,6 +541,8 @@ const char *llm_get_api_url(void)
             return LLM_API_URL_OPENROUTER;
         case LLM_BACKEND_OLLAMA:
             return LLM_API_URL_OLLAMA;
+        case LLM_BACKEND_OPENCODE:
+            return LLM_API_URL_OPENCODE;
         default:
             return LLM_API_URL_ANTHROPIC;
     }
@@ -553,6 +557,8 @@ const char *llm_get_default_model(void)
             return LLM_DEFAULT_MODEL_OPENROUTER;
         case LLM_BACKEND_OLLAMA:
             return LLM_DEFAULT_MODEL_OLLAMA;
+        case LLM_BACKEND_OPENCODE:
+            return LLM_DEFAULT_MODEL_OPENCODE;
         default:
             return LLM_DEFAULT_MODEL_ANTHROPIC;
     }
@@ -574,7 +580,8 @@ bool llm_is_openai_format(void)
 {
     return s_backend == LLM_BACKEND_OPENAI ||
            s_backend == LLM_BACKEND_OPENROUTER ||
-           s_backend == LLM_BACKEND_OLLAMA;
+           s_backend == LLM_BACKEND_OLLAMA ||
+           s_backend == LLM_BACKEND_OPENCODE;
 }
 
 #ifdef CONFIG_ZCLAW_STUB_LLM

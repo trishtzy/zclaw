@@ -55,7 +55,7 @@ typedef enum {
 #define LLM_API_URL_OPENROUTER  "https://openrouter.ai/api/v1/chat/completions"
 // Loopback default is mainly a placeholder for provisioning/runtime override.
 #define LLM_API_URL_OLLAMA      "http://127.0.0.1:11434/v1/chat/completions"
-#define LLM_API_URL_OPENCODE   "https://api.opencode.ai/v1/chat/completions"
+#define LLM_API_URL_OPENCODE   "https://opencode.ai/zen/v1/chat/completions"
 
 #define LLM_DEFAULT_MODEL_ANTHROPIC   "claude-sonnet-4-6"
 #define LLM_DEFAULT_MODEL_OPENAI      "gpt-5.4"

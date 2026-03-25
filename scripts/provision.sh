@@ -1049,6 +1049,10 @@ if [ "$BACKEND" = "ollama" ]; then
     fi
 fi
 
+if [ "$BACKEND" = "opencode" ] && [ -z "$API_URL" ]; then
+    API_URL="https://opencode.ai/zen/v1/chat/completions"
+fi
+
 if [ "$BACKEND" != "ollama" ] && [ -z "$API_KEY" ]; then
     if [ "$ASSUME_YES" = true ]; then
         echo "Error: --api-key is required with --yes"

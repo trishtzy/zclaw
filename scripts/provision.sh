@@ -31,7 +31,7 @@ Options:
   --pass <wifi-pass>        WiFi password (optional)
   --backend <provider>      anthropic | openai | openrouter | ollama | opencode
   --model <model-id>        Model ID (defaults by backend)
-  --api-key <key>           LLM API key (required for anthropic/openai/openrouter)
+  --api-key <key>           LLM API key (required for anthropic/openai/openrouter/opencode)
   --api-url <url>           Optional custom API endpoint URL
   --tg-token <token>        Telegram bot token (optional)
   --tg-chat-id <id[,id...]> Telegram chat ID allowlist (optional)
@@ -352,7 +352,7 @@ default_model_for_backend() {
         openai) echo "gpt-5.4" ;;
         openrouter) echo "openrouter/auto" ;;
         ollama) echo "qwen3:8b" ;;
-        opencode) echo "minimax-m2.5-free" ;;
+        opencode) echo "opencode/minimax-m2.5-free" ;;
         *) echo "claude-sonnet-4-6" ;;
     esac
 }
@@ -382,8 +382,8 @@ load_model_menu_for_backend() {
             MODEL_MENU_VALUES=("qwen3:8b" "__custom__")
             ;;
         opencode)
-            MODEL_MENU_LABELS=("minimax-m2.5-free (default)" "Other model ID")
-            MODEL_MENU_VALUES=("minimax-m2.5-free" "__custom__")
+            MODEL_MENU_LABELS=("opencode/minimax-m2.5-free (default)" "Other model ID")
+            MODEL_MENU_VALUES=("opencode/minimax-m2.5-free" "__custom__")
             ;;
         *)
             MODEL_MENU_LABELS=("Other model ID")
@@ -650,12 +650,13 @@ verify_openai_api_key() {
     local api_key="$1"
     local _model="$2"
     local api_url_override="$3"
+    local label="${4:-OpenAI}"
     local api_url="${api_url_override:-${OPENAI_API_URL:-https://api.openai.com/v1/models}}"
     local response_file
     local http_code
 
     if ! command -v curl >/dev/null 2>&1; then
-        echo "Warning: curl not found; skipping OpenAI API check."
+        echo "Warning: curl not found; skipping ${label} API check."
         return 2
     fi
 
@@ -667,17 +668,17 @@ verify_openai_api_key() {
         -H "authorization: Bearer $api_key" \
         "$api_url")"; then
         rm -f "$response_file"
-        echo "OpenAI API check failed: network/transport error."
+        echo "${label} API check failed: network/transport error."
         return 1
     fi
 
     if [ "$http_code" = "200" ]; then
         rm -f "$response_file"
-        echo "OpenAI API check passed (models endpoint reachable)."
+        echo "${label} API check passed (models endpoint reachable)."
         return 0
     fi
 
-    echo "OpenAI API check failed (HTTP $http_code)."
+    echo "${label} API check failed (HTTP $http_code)."
     if command -v python3 >/dev/null 2>&1; then
         python3 - "$response_file" <<'PY'
 import json
@@ -1069,6 +1070,7 @@ fi
 if [ "$VERIFY_API_KEY" = true ]; then
     VERIFY_LABEL=""
     VERIFY_FN=""
+    VERIFY_EXTRA_ARGS=""
     case "$BACKEND" in
         anthropic)
             VERIFY_LABEL="Anthropic"
@@ -1089,6 +1091,7 @@ if [ "$VERIFY_API_KEY" = true ]; then
         opencode)
             VERIFY_LABEL="OpenCode"
             VERIFY_FN="verify_openai_api_key"
+            VERIFY_EXTRA_ARGS="OpenCode"
             ;;
     esac
 
@@ -1100,7 +1103,7 @@ if [ "$VERIFY_API_KEY" = true ]; then
             else
                 echo "Verifying ${VERIFY_LABEL} API key with a quick connectivity check..."
             fi
-            if "$VERIFY_FN" "$API_KEY" "$MODEL" "$API_URL"; then
+            if "$VERIFY_FN" "$API_KEY" "$MODEL" "$API_URL" $VERIFY_EXTRA_ARGS; then
                 break
             fi
 

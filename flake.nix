@@ -17,7 +17,6 @@
       forEachSystem = nixpkgs.lib.genAttrs systems;
 
       esp-idf-version = "v5.4";
-      esp-idf-dir = "$HOME/esp/esp-idf";
       esp-idf-chips = "esp32,esp32c3,esp32c6,esp32s3";
     in
     {
@@ -29,7 +28,7 @@
           default = devenv.lib.mkShell {
             inherit inputs pkgs;
             modules = [
-              ({ pkgs, lib, ... }: {
+              ({ pkgs, lib, config, ... }: {
                 languages.c.enable = true;
 
                 languages.python = {
@@ -57,23 +56,26 @@
                 ];
 
                 env = {
-                  ESP_IDF_DIR = esp-idf-dir;
                   ESP_IDF_VERSION = esp-idf-version;
                   ESP_IDF_CHIPS = esp-idf-chips;
                   CMAKE_PREFIX_PATH = "${pkgs.cjson}";
                 };
 
                 enterShell = ''
-                  if [ ! -f "$ESP_IDF_DIR/export.sh" ]; then
+                  # Keep ESP-IDF and its toolchains entirely inside .devenv/
+                  export IDF_TOOLS_PATH="$DEVENV_STATE/espressif"
+                  export IDF_PATH="$DEVENV_STATE/esp-idf"
+                  export ESP_IDF_DIR="$IDF_PATH"
+
+                  if [ ! -f "$IDF_PATH/export.sh" ]; then
                     echo ""
-                    echo "ESP-IDF not found at $ESP_IDF_DIR"
-                    echo "Run: zclaw-install-idf"
+                    echo "ESP-IDF not found. Run: zclaw-install-idf"
                     echo ""
                   else
-                    source "$ESP_IDF_DIR/export.sh" 2>/dev/null
+                    source "$IDF_PATH/export.sh" 2>/dev/null
 
                     if command -v idf.py >/dev/null 2>&1; then
-                      echo "zclaw dev shell ready (ESP-IDF $(cat "$ESP_IDF_DIR/version.txt" 2>/dev/null || echo "${esp-idf-version}"))"
+                      echo "zclaw dev shell ready (ESP-IDF $(cat "$IDF_PATH/version.txt" 2>/dev/null || echo "${esp-idf-version}"))"
                     else
                       echo "Warning: ESP-IDF export.sh failed. Try: zclaw-install-idf"
                     fi
@@ -83,25 +85,28 @@
                 scripts = {
                   zclaw-install-idf.exec = ''
                     set -e
-                    mkdir -p ~/esp
-                    if [ -d "${esp-idf-dir}" ]; then
+                    export IDF_TOOLS_PATH="$DEVENV_STATE/espressif"
+                    export IDF_PATH="$DEVENV_STATE/esp-idf"
+
+                    if [ -d "$IDF_PATH" ]; then
                       echo "Updating ESP-IDF..."
-                      cd "${esp-idf-dir}"
+                      cd "$IDF_PATH"
                       git fetch
                       git checkout ${esp-idf-version}
                       git submodule update --init --recursive
                     else
                       echo "Cloning ESP-IDF ${esp-idf-version}..."
                       git clone -b ${esp-idf-version} --recursive \
-                        https://github.com/espressif/esp-idf.git ${esp-idf-dir}
+                        https://github.com/espressif/esp-idf.git "$IDF_PATH"
                     fi
-                    cd ${esp-idf-dir} && ./install.sh ${esp-idf-chips}
+
+                    cd "$IDF_PATH" && ./install.sh ${esp-idf-chips}
                     echo ""
                     echo "Activating ESP-IDF..."
-                    source "${esp-idf-dir}/export.sh"
+                    source "$IDF_PATH/export.sh"
                     echo "Done. idf.py is now available."
                   '';
-                  zclaw-install-idf.description = "Clone and install ESP-IDF toolchain";
+                  zclaw-install-idf.description = "Clone and install ESP-IDF toolchain (self-contained in .devenv/)";
 
                   zclaw-build.exec = "idf.py build";
                   zclaw-build.description = "Build zclaw firmware";

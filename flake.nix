@@ -97,7 +97,9 @@
                     fi
                     cd ${esp-idf-dir} && ./install.sh ${esp-idf-chips}
                     echo ""
-                    echo "Done. Re-enter the shell with: nix develop"
+                    echo "Activating ESP-IDF..."
+                    source "${esp-idf-dir}/export.sh"
+                    echo "Done. idf.py is now available."
                   '';
                   zclaw-install-idf.description = "Clone and install ESP-IDF toolchain";
 

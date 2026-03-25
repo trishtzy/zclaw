@@ -34,7 +34,7 @@ static char s_api_url_override[192] = {0};
 
 static bool llm_backend_requires_api_key(llm_backend_t backend)
 {
-    return backend != LLM_BACKEND_OLLAMA && backend != LLM_BACKEND_OPENCODE;
+    return backend != LLM_BACKEND_OLLAMA;
 }
 
 static const char *llm_backend_name(llm_backend_t backend)

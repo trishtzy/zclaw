@@ -35,7 +35,7 @@ Agent: Done. GPIO2 is now off.
 - **Built-in and custom tools** - Ships with a pre-built set of tools, easy to extend
 - **GPIO control** — Read sensors, toggle relays, control LEDs
 - **Persistent memory** — Remembers things across reboots
-- **Any LLM backend** — Anthropic, OpenAI, OpenRouter, or Ollama (custom endpoint)
+- **Any LLM backend** — Anthropic, OpenAI, OpenRouter, Ollama (custom endpoint), or OpenCode
 - **$5 hardware** — Just an ESP32 dev board and WiFi
 - **~888 KiB guaranteed max binary** — Fits in dual OTA partitions with ~40% free
 
@@ -494,7 +494,7 @@ If you switch between families (for example `esp32s3` to `esp32`), accept that p
 3. Enter required values:
    - WiFi SSID
    - LLM provider
-   - LLM API key (Anthropic/OpenAI/OpenRouter) or API URL (Ollama)
+   - LLM API key (Anthropic/OpenAI/OpenRouter/OpenCode) or API URL (Ollama)
 4. Optional: WiFi password, Telegram bot token, Telegram chat ID allowlist
 5. Reboot board and watch logs with `./scripts/monitor.sh`
 
@@ -543,6 +543,7 @@ Edit `main/config.h` to customize:
 #define LLM_DEFAULT_MODEL_OPENAI    "gpt-5.4"             // OpenAI default
 #define LLM_DEFAULT_MODEL_OPENROUTER "openrouter/auto"      // OpenRouter default
 #define LLM_DEFAULT_MODEL_OLLAMA    "qwen3:8b"            // Ollama default
+#define LLM_DEFAULT_MODEL_OPENCODE  "opencode/minimax-m2.5-free" // OpenCode default
 #define LLM_MAX_TOKENS 1024                   // Max response tokens
 #define MAX_HISTORY_TURNS 8                   // Conversation history length
 #define RATELIMIT_MAX_PER_HOUR 100            // LLM requests per hour

@@ -1070,7 +1070,6 @@ fi
 if [ "$VERIFY_API_KEY" = true ]; then
     VERIFY_LABEL=""
     VERIFY_FN=""
-    VERIFY_EXTRA_ARGS=""
     case "$BACKEND" in
         anthropic)
             VERIFY_LABEL="Anthropic"
@@ -1091,7 +1090,6 @@ if [ "$VERIFY_API_KEY" = true ]; then
         opencode)
             VERIFY_LABEL="OpenCode"
             VERIFY_FN="verify_openai_api_key"
-            VERIFY_EXTRA_ARGS="OpenCode"
             ;;
     esac
 
@@ -1103,7 +1101,7 @@ if [ "$VERIFY_API_KEY" = true ]; then
             else
                 echo "Verifying ${VERIFY_LABEL} API key with a quick connectivity check..."
             fi
-            if "$VERIFY_FN" "$API_KEY" "$MODEL" "$API_URL" $VERIFY_EXTRA_ARGS; then
+            if "$VERIFY_FN" "$API_KEY" "$MODEL" "$API_URL" "$VERIFY_LABEL"; then
                 break
             fi
 

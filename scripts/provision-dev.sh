@@ -38,7 +38,7 @@ Overrides:
   --port <serial-port>
   --ssid <wifi-ssid>
   --pass <wifi-pass>
-  --backend <provider>   anthropic | openai | openrouter | ollama
+  --backend <provider>   anthropic | openai | openrouter | ollama | opencode
   --model <model-id>
   --api-key <key>
   --api-url <url>          Custom API endpoint URL
@@ -76,6 +76,7 @@ ZCLAW_API_KEY=
 # ANTHROPIC_API_KEY=
 # OPENROUTER_API_KEY=
 # OLLAMA_API_KEY=
+# OPENCODE_API_KEY=
 
 # Optional Telegram credentials:
 ZCLAW_TG_TOKEN=
@@ -185,6 +186,9 @@ resolve_api_key() {
             ;;
         ollama)
             printf '%s\n' "${OLLAMA_API_KEY:-}"
+            ;;
+        opencode)
+            printf '%s\n' "${OPENCODE_API_KEY:-}"
             ;;
         *)
             printf '%s\n' ""

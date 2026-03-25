@@ -29,7 +29,7 @@ Options:
   --port <serial-port>      Serial port (auto-detect if omitted)
   --ssid <wifi-ssid>        WiFi SSID (auto-detected when possible)
   --pass <wifi-pass>        WiFi password (optional)
-  --backend <provider>      anthropic | openai | openrouter | ollama
+  --backend <provider>      anthropic | openai | openrouter | ollama | opencode
   --model <model-id>        Model ID (defaults by backend)
   --api-key <key>           LLM API key (required for anthropic/openai/openrouter)
   --api-url <url>           Optional custom API endpoint URL
@@ -352,6 +352,7 @@ default_model_for_backend() {
         openai) echo "gpt-5.4" ;;
         openrouter) echo "openrouter/auto" ;;
         ollama) echo "qwen3:8b" ;;
+        opencode) echo "opencode/qwen3-coder-32b" ;;
         *) echo "claude-sonnet-4-6" ;;
     esac
 }
@@ -379,6 +380,10 @@ load_model_menu_for_backend() {
         ollama)
             MODEL_MENU_LABELS=("qwen3:8b (default)" "Other model ID")
             MODEL_MENU_VALUES=("qwen3:8b" "__custom__")
+            ;;
+        opencode)
+            MODEL_MENU_LABELS=("opencode/qwen3-coder-32b (default)" "Other model ID")
+            MODEL_MENU_VALUES=("opencode/qwen3-coder-32b" "__custom__")
             ;;
         *)
             MODEL_MENU_LABELS=("Other model ID")
@@ -429,7 +434,7 @@ prompt_for_model() {
 
 validate_backend() {
     case "$1" in
-        anthropic|openai|openrouter|ollama) return 0 ;;
+        anthropic|openai|openrouter|ollama|opencode) return 0 ;;
         *) return 1 ;;
     esac
 }
@@ -1010,13 +1015,13 @@ if [ -z "$BACKEND" ]; then
     if [ "$ASSUME_YES" = true ]; then
         BACKEND="openai"
     else
-        read -r -p "LLM provider [openai/anthropic/openrouter/ollama] (default: openai): " BACKEND
+        read -r -p "LLM provider [openai/anthropic/openrouter/ollama/opencode] (default: openai): " BACKEND
         BACKEND="${BACKEND:-openai}"
     fi
 fi
 
 if ! validate_backend "$BACKEND"; then
-    echo "Error: invalid backend '$BACKEND' (expected anthropic|openai|openrouter|ollama)"
+    echo "Error: invalid backend '$BACKEND' (expected anthropic|openai|openrouter|ollama|opencode)"
     exit 1
 fi
 
@@ -1076,6 +1081,10 @@ if [ "$VERIFY_API_KEY" = true ]; then
         ollama)
             VERIFY_LABEL="Ollama endpoint"
             VERIFY_FN="verify_ollama_endpoint"
+            ;;
+        opencode)
+            VERIFY_LABEL="OpenCode"
+            VERIFY_FN="verify_openai_api_key"
             ;;
     esac
 

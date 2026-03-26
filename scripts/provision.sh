@@ -352,7 +352,7 @@ default_model_for_backend() {
         openai) echo "gpt-5.4" ;;
         openrouter) echo "openrouter/auto" ;;
         ollama) echo "qwen3:8b" ;;
-        opencode) echo "opencode/minimax-m2.5-free" ;;
+        opencode) echo "minimax-m2.5-free" ;;
         *) echo "claude-sonnet-4-6" ;;
     esac
 }
@@ -382,8 +382,8 @@ load_model_menu_for_backend() {
             MODEL_MENU_VALUES=("qwen3:8b" "__custom__")
             ;;
         opencode)
-            MODEL_MENU_LABELS=("opencode/minimax-m2.5-free (default)" "Other model ID")
-            MODEL_MENU_VALUES=("opencode/minimax-m2.5-free" "__custom__")
+            MODEL_MENU_LABELS=("minimax-m2.5-free (default)" "Other model ID")
+            MODEL_MENU_VALUES=("minimax-m2.5-free" "__custom__")
             ;;
         *)
             MODEL_MENU_LABELS=("Other model ID")

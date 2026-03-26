@@ -31,10 +31,9 @@
               ({ pkgs, lib, config, ... }: {
                 languages.c.enable = true;
 
-                languages.python = {
-                  enable = true;
-                  venv.enable = true;
-                };
+                # Only provide the base interpreter — ESP-IDF creates its
+                # own venv inside $IDF_TOOLS_PATH during install.
+                languages.python.enable = true;
 
                 packages = with pkgs; [
                   cmake
